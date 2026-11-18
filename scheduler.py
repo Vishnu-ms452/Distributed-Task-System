@@ -1,18 +1,22 @@
 class Scheduler:
+
     def __init__(self):
         self.workers = {}
 
     def register_worker(self, worker_id):
-        self.workers[worker_id] = {
-            "active_tasks": 0,
-            "status": "AVAILABLE",
-        }
+
+        if worker_id not in self.workers:
+            self.workers[worker_id] = {
+                "active_tasks": 0,
+                "failed": False
+            }
 
     def choose_worker(self):
+
         available = [
             (worker_id, info)
             for worker_id, info in self.workers.items()
-            if info["status"] == "AVAILABLE"
+            if not info["failed"]
         ]
 
         if not available:
@@ -20,45 +24,55 @@ class Scheduler:
 
         worker_id, _ = min(
             available,
-            key=lambda item: item[1]["active_tasks"]
+            key=lambda item: (
+                item[1]["active_tasks"],
+                item[0]
+            )
         )
+
         return worker_id
 
     def task_assigned(self, worker_id):
-        if worker_id not in self.workers:
-            raise ValueError("Unknown worker")
 
-        if self.workers[worker_id]["status"] != "AVAILABLE":
-            raise ValueError("Worker is not available")
+        if worker_id not in self.workers:
+            raise ValueError(
+                f"Unknown worker: {worker_id}"
+            )
+
+        if self.workers[worker_id]["failed"]:
+            raise ValueError(
+                f"Worker {worker_id} has failed"
+            )
 
         self.workers[worker_id]["active_tasks"] += 1
-    def mark_worker_failed(self, worker_id):
-        if worker_id not in self.workers:
-            raise ValueError("Unknown worker")
 
-        self.workers[worker_id]["status"] = "FAILED"
     def task_completed(self, worker_id):
+
         if worker_id not in self.workers:
-            raise ValueError("Unknown worker")
+            return
 
-        if self.workers[worker_id]["active_tasks"] <= 0:
-            raise ValueError("No active task to complete")
+        if self.workers[worker_id]["active_tasks"] > 0:
+            self.workers[worker_id]["active_tasks"] -= 1
 
-        self.workers[worker_id]["active_tasks"] -= 1
+    def mark_worker_failed(self, worker_id):
+
+        if worker_id in self.workers:
+            self.workers[worker_id]["failed"] = True
+
     def recover_failed_worker(self, worker_id):
+
         if worker_id not in self.workers:
-            raise ValueError("Unknown worker")
+            return 0
 
-        if self.workers[worker_id]["status"] != "FAILED":
-            raise ValueError("Worker has not failed")
-
-        pending_tasks = self.workers[worker_id]["active_tasks"]
+        pending = self.workers[worker_id]["active_tasks"]
 
         self.workers[worker_id]["active_tasks"] = 0
 
-        return pending_tasks
-    def restore_worker(self, worker_id):
-        if worker_id not in self.workers:
-            raise ValueError("Unknown worker")
+        return pending
 
-        self.workers[worker_id]["status"] = "AVAILABLE"
+    def restore_worker(self, worker_id):
+
+        if worker_id in self.workers:
+            self.workers[worker_id]["failed"] = False
+
+
