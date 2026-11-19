@@ -1,95 +1,96 @@
-
 import csv
+import heapq
 import time
-import sys
 from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
 from scheduler import Scheduler
 
+NUM_WORKERS = 4
+NUM_TASKS = 1000
+TRIALS = 5
+ARRIVAL_INTERVAL = 0.001
+DURATIONS = [0.002, 0.008, 0.003, 0.010,
+             0.004, 0.006, 0.009, 0.002]
 
-def run_least_loaded(num_workers, num_tasks):
+
+def simulate(strategy):
     scheduler = Scheduler()
+    workers = [f"W{i + 1}" for i in range(NUM_WORKERS)]
 
-    for i in range(num_workers):
-        scheduler.register_worker(f"W{i + 1}")
+    for wid in workers:
+        scheduler.register_worker(wid)
 
+    worker_available = {wid: 0.0 for wid in workers}
+    distribution = {wid: 0 for wid in workers}
+    active = []
+    makespan = 0.0
     start = time.perf_counter()
 
-    for _ in range(num_tasks):
-        worker_id = scheduler.choose_worker()
-        scheduler.task_assigned(worker_id)
+    for i in range(NUM_TASKS):
+        now = i * ARRIVAL_INTERVAL
 
-    elapsed = time.perf_counter() - start
+        # Complete tasks whose simulated finish time has arrived.
+        while active and active[0][0] <= now:
+            finish, _, wid = heapq.heappop(active)
+            scheduler.task_completed(wid)
 
-    distribution = {
-        worker_id: info["active_tasks"]
-        for worker_id, info in scheduler.workers.items()
-    }
+        if strategy == "least_loaded":
+            wid = scheduler.choose_worker()
+            if wid is None:
+                raise RuntimeError("No available worker")
+        else:
+            wid = workers[i % NUM_WORKERS]
 
-    return elapsed, distribution
+        scheduler.task_assigned(wid)
+        distribution[wid] += 1
 
+        # A busy worker starts its next task only when available.
+        task_start = max(now, worker_available[wid])
+        finish = task_start + DURATIONS[i % len(DURATIONS)]
+        worker_available[wid] = finish
+        makespan = max(makespan, finish)
 
-def run_round_robin(num_workers, num_tasks):
-    workers = [f"W{i + 1}" for i in range(num_workers)]
-    distribution = {worker_id: 0 for worker_id in workers}
+        heapq.heappush(active, (finish, i, wid))
 
-    start = time.perf_counter()
+    # Drain all remaining tasks.
+    while active:
+        finish, _, wid = heapq.heappop(active)
+        scheduler.task_completed(wid)
+        makespan = max(makespan, finish)
 
-    for i in range(num_tasks):
-        worker_id = workers[i % num_workers]
-        distribution[worker_id] += 1
-
-    elapsed = time.perf_counter() - start
-
-    return elapsed, distribution
+    runtime = time.perf_counter() - start
+    return makespan, runtime, distribution
 
 
 def main():
-    num_workers = 4
-    num_tasks = 10000
-    trials = 5
-
-    results_dir = ROOT / "results"
+    results_dir = Path(__file__).resolve().parent / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     csv_path = results_dir / "benchmark_results.csv"
 
-    with open(csv_path, "w", newline="") as file:
+    with csv_path.open("w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow([
-            "trial",
-            "strategy",
-            "workers",
-            "tasks",
-            "assignment_time_seconds",
+            "trial", "strategy", "workers", "tasks",
+            "simulated_makespan_seconds",
+            "simulation_runtime_seconds", "worker_distribution"
         ])
 
-        for trial in range(1, trials + 1):
-            least_time, least_distribution = run_least_loaded(
-                num_workers, num_tasks
-            )
-            rr_time, rr_distribution = run_round_robin(
-                num_workers, num_tasks
-            )
+        for trial in range(1, TRIALS + 1):
+            for strategy in ("least_loaded", "round_robin"):
+                makespan, runtime, distribution = simulate(strategy)
 
-            writer.writerow([
-                trial, "least_loaded", num_workers, num_tasks,
-                f"{least_time:.6f}"
-            ])
-            writer.writerow([
-                trial, "round_robin", num_workers, num_tasks,
-                f"{rr_time:.6f}"
-            ])
+                writer.writerow([
+                    trial, strategy, NUM_WORKERS, NUM_TASKS,
+                    f"{makespan:.6f}", f"{runtime:.6f}",
+                    str(distribution)
+                ])
 
-            print(f"\nTrial {trial}")
-            print(f"Least-loaded: {least_time:.6f} seconds")
-            print(f"Round-robin:  {rr_time:.6f} seconds")
-            print(f"Least-loaded distribution: {least_distribution}")
-            print(f"Round-robin distribution:  {rr_distribution}")
+                print(f"\nTrial {trial} - {strategy}")
+                print(f"Simulated makespan: {makespan:.6f} seconds")
+                print(f"Simulation runtime: {runtime:.6f} seconds")
+                print(f"Task assignments: {distribution}")
 
-    print(f"\nAll {trials} trials saved to {csv_path}")
+    print(f"\nResults saved to {csv_path}")
+    print("NOTE: Makespan is simulated, not measured over Mininet.")
 
 
 if __name__ == "__main__":
