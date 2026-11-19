@@ -1,0 +1,11 @@
+trial,strategy,workers,tasks,assignment_time_seconds
+1,least_loaded,4,10000,0.026580
+1,round_robin,4,10000,0.001752
+2,least_loaded,4,10000,0.012184
+2,round_robin,4,10000,0.000792
+3,least_loaded,4,10000,0.010313
+3,round_robin,4,10000,0.000626
+4,least_loaded,4,10000,0.013324
+4,round_robin,4,10000,0.000637
+5,least_loaded,4,10000,0.015839
+5,round_robin,4,10000,0.000792
